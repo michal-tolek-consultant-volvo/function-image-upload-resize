@@ -26,7 +26,8 @@ using System.IO;
 using System.Linq;
 using System.Text.RegularExpressions;
 using System.Threading.Tasks;
-
+using WebPWrapper;
+using WebPWrapper.Encoder;
 using Image = SixLabors.ImageSharp.Image;
 
 namespace ImageFunctions
@@ -36,6 +37,16 @@ namespace ImageFunctions
         private static readonly string BLOB_STORAGE_CONNECTION_STRING = Environment.GetEnvironmentVariable("AzureWebJobsStorage");
         private static readonly string THUMBNAIL_POSTFIX_FILENAME = "-thumbnail-";
         private static readonly string SUPPORTED_IMAGE_EXTENSIONS = "gif|png|jpe?g";
+        private static readonly bool IS_WEBP = Convert.ToBoolean(Environment.GetEnvironmentVariable("WEBP_SUPPORT"));
+        private static readonly string WEBP_EXTENSION  = ".webp";
+
+        private static void InitWebP(bool isWebp)
+        {
+            if (isWebp)
+            {
+                WebPExecuteDownloader.Download();
+            }
+        }
 
 
         private static string GetBlobNameFromUrl(string bloblUrl)
@@ -77,8 +88,26 @@ namespace ImageFunctions
             return encoder;
         }
 
+        private static Stream GetWebp(int size, MemoryStream input)
+        {
+            var output = new MemoryStream();
+            var builder = new WebPEncoderBuilder();
+            var encoder = builder
+                .Resize(size, 0)
+                .AlphaConfig(x => x
+                    .TransparentProcess(
+                        TransparentProcesses.Blend,
+                        System.Drawing.Color.Yellow
+                    )
+                ).CompressionConfig(x => x.Lossy(y => y.Quality(90))).Build();
+            encoder.Encode(input, output);
+            output.Position = 0;
+
+            return output;
+        }
+
         [FunctionName("Thumbnail")]
-        public static async Task Run(
+        public static Task Run(
             [EventGridTrigger]EventGridEvent eventGridEvent,
             [Blob("{data.url}", FileAccess.Read)] Stream input,
             ILogger log)
@@ -88,8 +117,11 @@ namespace ImageFunctions
                 if (input != null)
                 {
                     var createdEvent = ((JObject)eventGridEvent.Data).ToObject<StorageBlobCreatedEventData>();
-                    var extension = Path.GetExtension(createdEvent.Url);
-                    var encoder = GetEncoder(extension);
+                    var originExtension = Path.GetExtension(createdEvent.Url);
+                    var extension = IS_WEBP ? WEBP_EXTENSION : originExtension;
+                    var encoder = GetEncoder(originExtension);
+
+                    InitWebP(IS_WEBP);
 
                     if (encoder != null)
                     {
@@ -105,11 +137,12 @@ namespace ImageFunctions
                             thumbnailWidths.ForEach(async (width) =>
                             {
                                 var image = originImage.CloneAs<Rgba32>();
-                                var blobName = originBlobName.Replace(extension, THUMBNAIL_POSTFIX_FILENAME + width + extension);
+                                var blobName = originBlobName.Replace(originExtension, $"{THUMBNAIL_POSTFIX_FILENAME}{width}{extension}");
 
                                 using (var output = new MemoryStream())
                                 {
-                                    if (width <= image.Width)
+                                    
+                                    if (!IS_WEBP && width <= image.Width)
                                     {
                                         float divisor = (float)image.Width / image.Height;
                                         var height = Convert.ToInt32(Math.Round((decimal)(image.Height / divisor)));
@@ -120,7 +153,16 @@ namespace ImageFunctions
                                     image.Save(output, encoder);
                                     output.Position = 0;
 
-                                    await blobContainerClient.GetBlobClient(blobName).UploadAsync(output, new BlobUploadOptions { HttpHeaders = blobHttpHeader });
+                                    var stream = IS_WEBP ? GetWebp(width, output) : output;
+
+                                    await blobContainerClient.GetBlobClient(blobName).UploadAsync(stream, new BlobUploadOptions { HttpHeaders = blobHttpHeader });
+
+                                    await output.DisposeAsync();
+
+                                    if (IS_WEBP)
+                                    {
+                                        await stream.DisposeAsync();
+                                    }
                                 }
                             });
                         }
@@ -136,6 +178,8 @@ namespace ImageFunctions
                 log.LogInformation(ex.Message);
                 throw;
             }
+
+            return Task.CompletedTask;
         }
     }
 }
