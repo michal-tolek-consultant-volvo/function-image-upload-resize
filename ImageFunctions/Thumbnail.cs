@@ -111,7 +111,7 @@ namespace ImageFunctions
                                 {
                                     if (width <= image.Width)
                                     {
-                                        var divisor = image.Width / width;
+                                        float divisor = (float)image.Width / image.Height;
                                         var height = Convert.ToInt32(Math.Round((decimal)(image.Height / divisor)));
 
                                         image.Mutate(x => x.Resize(width, height));
