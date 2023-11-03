@@ -144,8 +144,7 @@ namespace ImageFunctions
                                     
                                     if (!IS_WEBP && width <= image.Width)
                                     {
-                                        float divisor = (float)image.Width / image.Height;
-                                        var height = Convert.ToInt32(Math.Round((decimal)(image.Height / divisor)));
+                                        var height = Convert.ToInt32(Math.Round((decimal)((width * image.Height) / image.Width)));
 
                                         image.Mutate(x => x.Resize(width, height));
                                     }
