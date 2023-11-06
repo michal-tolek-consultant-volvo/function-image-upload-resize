@@ -26,7 +26,6 @@ using System.IO;
 using System.Linq;
 using System.Text.RegularExpressions;
 using System.Threading.Tasks;
-using WebPWrapper;
 using WebPWrapper.Encoder;
 using Image = SixLabors.ImageSharp.Image;
 
@@ -39,14 +38,7 @@ namespace ImageFunctions
         private static readonly string SUPPORTED_IMAGE_EXTENSIONS = "gif|png|jpe?g";
         private static readonly bool IS_WEBP = Convert.ToBoolean(Environment.GetEnvironmentVariable("WEBP_SUPPORT"));
         private static readonly string WEBP_EXTENSION  = ".webp";
-
-        private static void InitWebP(bool isWebp)
-        {
-            if (isWebp)
-            {
-                WebPExecuteDownloader.Download();
-            }
-        }
+        private static readonly string WEBP_CONVERTER_PATH = "modules/bin/cwebp.exe";
 
 
         private static string GetBlobNameFromUrl(string bloblUrl)
@@ -91,7 +83,8 @@ namespace ImageFunctions
         private static Stream GetWebp(int size, MemoryStream input)
         {
             var output = new MemoryStream();
-            var builder = new WebPEncoderBuilder();
+            var path = Path.GetFullPath(WEBP_CONVERTER_PATH);
+            var builder = new WebPEncoderBuilder(path);
             var encoder = builder
                 .Resize(size, 0)
                 .AlphaConfig(x => x
@@ -120,8 +113,6 @@ namespace ImageFunctions
                     var originExtension = Path.GetExtension(createdEvent.Url);
                     var extension = IS_WEBP ? WEBP_EXTENSION : originExtension;
                     var encoder = GetEncoder(originExtension);
-
-                    InitWebP(IS_WEBP);
 
                     if (encoder != null)
                     {
