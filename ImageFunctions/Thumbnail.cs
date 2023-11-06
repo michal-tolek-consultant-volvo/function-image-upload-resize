@@ -80,10 +80,11 @@ namespace ImageFunctions
             return encoder;
         }
 
-        private static Stream GetWebp(int size, MemoryStream input)
+        private static Stream GetWebp(int size, MemoryStream input, ILogger log)
         {
             var output = new MemoryStream();
             var path = Path.GetFullPath(WEBP_CONVERTER_PATH);
+            log.LogInformation($"Starting processing using webp converter path ${path} for thumbnail size {size}");
             var builder = new WebPEncoderBuilder(path);
             var encoder = builder
                 .Resize(size, 0)
@@ -96,6 +97,7 @@ namespace ImageFunctions
             encoder.Encode(input, output);
             output.Position = 0;
 
+            log.LogInformation("Completed processing webp");
             return output;
         }
 
@@ -107,11 +109,15 @@ namespace ImageFunctions
         {
             try
             {
+                log.LogInformation("Starting Thumbnail function...");
+
                 if (input != null)
                 {
                     var createdEvent = ((JObject)eventGridEvent.Data).ToObject<StorageBlobCreatedEventData>();
+                    log.LogInformation($"Event url {createdEvent.Url}");
                     var originExtension = Path.GetExtension(createdEvent.Url);
                     var extension = IS_WEBP ? WEBP_EXTENSION : originExtension;
+                    log.LogInformation($"Target extension {extension}");
                     var encoder = GetEncoder(originExtension);
 
                     if (encoder != null)
@@ -143,7 +149,7 @@ namespace ImageFunctions
                                     image.Save(output, encoder);
                                     output.Position = 0;
 
-                                    var stream = IS_WEBP ? GetWebp(width, output) : output;
+                                    var stream = IS_WEBP ? GetWebp(width, output, log) : output;
 
                                     await blobContainerClient.GetBlobClient(blobName).UploadAsync(stream, new BlobUploadOptions { HttpHeaders = blobHttpHeader });
 
